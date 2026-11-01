@@ -399,7 +399,8 @@ void ui_record(VkCommandBuffer cb, VkImage image, VkFormat format, VkExtent2D ex
     static bool was_visible = false;
     static clock::time_point opened_at;
     const bool visible = g_visible.load();
-    if (visible && !was_visible) opened_at = clock::now();
+    const bool opened = visible && !was_visible;
+    if (opened) opened_at = clock::now();
     was_visible = visible;
     if ((!visible && !hint && !show_fps) || !extent.width || !extent.height) return;
     if (!init_imgui(format)) return;
@@ -420,7 +421,7 @@ void ui_record(VkCommandBuffer cb, VkImage image, VkFormat format, VkExtent2D ex
     ImGui::PushFont(g_font_body);
     if (g_visible) {
         float opening = std::clamp(std::chrono::duration<float>(now - opened_at).count() / 0.22f, 0.0f, 1.0f);
-        if (!settings_draw(scale, g_font_title, opening)) g_visible = false;  // closed from the screen
+        if (!settings_draw(scale, g_font_title, opening, opened)) g_visible = false;  // closed from the screen
     } else if (hint) {
         settings_hint(scale, hint_t);
     }
@@ -568,11 +569,24 @@ bool ui_pad(uint64_t buttons, int32_t lx, int32_t ly) {
     uint64_t pressed = buttons & ~prev, released = prev & ~buttons;
     prev = buttons;
     constexpr uint64_t kPlus = 1ull << 10, kMinus = 1ull << 11;
-    if ((buttons & (kPlus | kMinus)) == (kPlus | kMinus) && (pressed & (kPlus | kMinus))) {
-        ui_toggle();
-        return true;
-    }
-    if (!g_visible) return false;
+    const bool toggled = (buttons & (kPlus | kMinus)) == (kPlus | kMinus) && (pressed & (kPlus | kMinus));
+    if (toggled) ui_toggle();
+    const bool captured = g_visible || toggled;
+    static int sx = 0, sy = 0;
+    auto axis = [](int32_t value, int state) {
+        return value > 16000 ? 1 : value < -16000 ? -1 : std::abs(value) < 9000 ? 0 : state;
+    };
+    sx = g_visible ? axis(lx, sx) : 0;
+    sy = g_visible ? axis(ly, sy) : 0;
+    if (sx < 0) buttons |= 1ull << 12;
+    if (sx > 0) buttons |= 1ull << 14;
+    if (sy < 0) buttons |= 1ull << 15;
+    if (sy > 0) buttons |= 1ull << 13;
+    if (!g_visible || toggled) buttons = 0;
+    static uint64_t sent = 0;
+    pressed = buttons & ~sent;
+    released = sent & ~buttons;
+    sent = buttons;
     struct Map {
         uint64_t bit;
         ImGuiKey key;
@@ -591,20 +605,7 @@ bool ui_pad(uint64_t buttons, int32_t lx, int32_t ly) {
         if (pressed & m.bit) push({Input::Key, m.key, true});
         if (released & m.bit) push({Input::Key, m.key, false});
     }
-    // The left stick as a D-pad with hysteresis.
-    static int sx = 0, sy = 0;
-    auto stick = [&](int32_t v, int& state, ImGuiKey neg, ImGuiKey pos) {
-        int now = v > 16000 ? 1 : v < -16000 ? -1 : (std::abs(v) < 9000 ? 0 : state);
-        if (now == state) return;
-        if (state < 0) push({Input::Key, neg, false});
-        if (state > 0) push({Input::Key, pos, false});
-        if (now < 0) push({Input::Key, neg, true});
-        if (now > 0) push({Input::Key, pos, true});
-        state = now;
-    };
-    stick(lx, sx, ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadDpadRight);
-    stick(ly, sy, ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadDpadUp);
-    return true;
+    return captured;
 }
 
 uint64_t ui_game_buttons(uint64_t buttons, bool captured) {
@@ -649,6 +650,11 @@ bool ui_visible() { return g_visible; }
 void ui_begin_key_capture() {
     g_captured = 0;
     g_capture = true;
+}
+
+void ui_cancel_key_capture() {
+    g_capture = false;
+    g_captured = 0;
 }
 
 int ui_take_captured_key() { return g_captured.exchange(0); }
