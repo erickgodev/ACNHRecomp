@@ -418,11 +418,8 @@ void ui_record(VkCommandBuffer cb, VkImage image, VkFormat format, VkExtent2D ex
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
     ImGui::PushFont(g_font_body);
-    float settings_opacity = 1.0f;
     if (g_visible) {
-        float opening = std::clamp(std::chrono::duration<float>(now - opened_at).count() / 0.32f, 0.0f, 1.0f);
-        opening = opening * opening * (3.0f - 2.0f * opening);
-        settings_opacity = opening;
+        float opening = std::clamp(std::chrono::duration<float>(now - opened_at).count() / 0.22f, 0.0f, 1.0f);
         if (!settings_draw(scale, g_font_title, opening)) g_visible = false;  // closed from the screen
     } else if (hint) {
         settings_hint(scale, hint_t);
@@ -434,19 +431,6 @@ void ui_record(VkCommandBuffer cb, VkImage image, VkFormat format, VkExtent2D ex
     ImGui::Render();
     ImDrawData* dd = ImGui::GetDrawData();
     if (!dd || dd->CmdListsCount == 0) return;
-    // Fade the completed geometry so custom icons, text and backgrounds fade together.
-    // The FPS overlay uses the foreground list and stays fully visible.
-    if (settings_opacity < 1.0f) {
-        const ImDrawList* foreground = ImGui::GetForegroundDrawList();
-        for (ImDrawList* list : dd->CmdLists) {
-            if (list == foreground) continue;
-            for (ImDrawVert& vertex : list->VtxBuffer) {
-                const ImU32 alpha = (vertex.col >> IM_COL32_A_SHIFT) & 0xff;
-                vertex.col = (vertex.col & ~(0xffu << IM_COL32_A_SHIFT)) |
-                             (ImU32(float(alpha) * settings_opacity) << IM_COL32_A_SHIFT);
-            }
-        }
-    }
     if (quarter) rotate_draw_data(dd, quarter, up_w, up_h);
     VkImageView view = view_for(image, format);
     if (!view) return;

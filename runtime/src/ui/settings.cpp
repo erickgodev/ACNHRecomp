@@ -203,7 +203,10 @@ void combo(const std::string& key, const std::string& fallback, const Choices& c
         shown += "…";
     }
     ImGui::SetNextItemWidth(width);
-    if (ImGui::BeginCombo("##c", shown.c_str())) {
+    ImGui::PushStyleColor(ImGuiCol_NavCursor, ImVec4(0, 0, 0, 0));
+    bool combo_open = ImGui::BeginCombo("##c", shown.c_str());
+    ImGui::PopStyleColor();
+    if (combo_open) {
         for (auto& [v, t] : choices) {
             bool sel = v == cur;
             if (ImGui::Selectable(t.c_str(), sel)) store(key, v);
@@ -218,7 +221,7 @@ void combo(const std::string& key, const std::string& fallback, const Choices& c
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 rmin = ImGui::GetItemRectMin();
         ImVec2 rmax = ImGui::GetItemRectMax();
-        dl->AddRect(rmin, rmax, rgb(246, 170, 40), 6.0f * g_scale, 0, 2.5f * g_scale);
+        dl->AddRect(rmin, rmax, rgb(246, 170, 40), ImGui::GetStyle().FrameRounding, 0, 2.5f * g_scale);
         if (cur_idx >= 0 && choices.size() > 1) {
             if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft, true) || ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true)) {
                 int next_idx = (cur_idx - 1 + int(choices.size())) % int(choices.size());
@@ -241,7 +244,9 @@ void toggle(const std::string& key, bool fallback, float width = 0) {
     float natural_w = pill_w + 10.0f * g_scale + ts.x;
     float hit_w = width > 0 ? width : natural_w;
     ImVec2 p = ImGui::GetCursorScreenPos();
+    ImGui::PushStyleColor(ImGuiCol_NavCursor, ImVec4(0, 0, 0, 0));
     bool clicked = ImGui::InvisibleButton("##t", ImVec2(hit_w, h), ImGuiButtonFlags_EnableNav);
+    ImGui::PopStyleColor();
     bool focused = ImGui::IsItemFocused();
     bool hov = ImGui::IsItemHovered();
     bool was_on = on;
@@ -276,11 +281,6 @@ void toggle(const std::string& key, bool fallback, float width = 0) {
     dl->AddRectFilled(p, ImVec2(p.x + pill_w, p.y + h), bg, h * 0.5f);
     if (hov || focused) {
         dl->AddRect(p, ImVec2(p.x + pill_w, p.y + h), rgb(246, 170, 40), h * 0.5f, 0, 2.5f * g_scale);
-        if (focused) {
-            dl->AddRect(ImVec2(p.x - 2.0f * g_scale, p.y - 2.0f * g_scale),
-                        ImVec2(p.x + hit_w + 2.0f * g_scale, p.y + h + 2.0f * g_scale),
-                        rgb(246, 170, 40), 6.0f * g_scale, 0, 2.0f * g_scale);
-        }
     }
     float r = h * 0.5f - 3.0f * g_scale;
     ImVec2 knob(on ? p.x + pill_w - h * 0.5f : p.x + h * 0.5f, p.y + h * 0.5f);
@@ -294,7 +294,9 @@ void slider(const std::string& key, int lo, int hi, int fallback, const char* fm
     g_row_key = key;
     int v = config_get_int(key, fallback);
     ImGui::SetNextItemWidth(width);
+    ImGui::PushStyleColor(ImGuiCol_NavCursor, ImVec4(0, 0, 0, 0));
     const bool changed = ImGui::SliderInt("##s", &v, lo, hi, fmt);
+    ImGui::PopStyleColor();
     g_slider_held |= ImGui::IsItemActive();
     if (changed) {
         config_set(key, std::to_string(v));
@@ -304,18 +306,20 @@ void slider(const std::string& key, int lo, int hi, int fallback, const char* fm
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 rmin = ImGui::GetItemRectMin();
         ImVec2 rmax = ImGui::GetItemRectMax();
-        dl->AddRect(rmin, rmax, rgb(246, 170, 40), 6.0f * g_scale, 0, 2.5f * g_scale);
+        dl->AddRect(rmin, rmax, rgb(246, 170, 40), ImGui::GetStyle().FrameRounding, 0, 2.5f * g_scale);
     }
     if (ImGui::IsItemDeactivatedAfterEdit()) config_save();
 }
 
 bool button(const char* text, float width = 0) {
+    ImGui::PushStyleColor(ImGuiCol_NavCursor, ImVec4(0, 0, 0, 0));
     bool res = ImGui::Button(text, ImVec2(width, 0));
+    ImGui::PopStyleColor();
     if (ImGui::IsItemFocused()) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 rmin = ImGui::GetItemRectMin();
         ImVec2 rmax = ImGui::GetItemRectMax();
-        dl->AddRect(rmin, rmax, rgb(246, 170, 40), 6.0f * g_scale, 0, 2.5f * g_scale);
+        dl->AddRect(rmin, rmax, rgb(246, 170, 40), ImGui::GetStyle().FrameRounding, 0, 2.5f * g_scale);
     }
     return res;
 }
@@ -882,7 +886,7 @@ bool settings_draw(float scale, ImFont* title, float opening) {
     ImVec2 size = portrait ? ImVec2(ds.x * 0.96f, ds.y * 0.94f)
                            : ImVec2(std::min(ds.x * 0.92f, 1180.0f * scale), std::min(ds.y * 0.9f, 680.0f * scale));
     const float remaining = 1.0f - opening;
-    const float slide = 18.0f * scale * remaining;
+    const float slide = 18.0f * scale * remaining * remaining * remaining;
     ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f + slide), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(size, ImGuiCond_Always);
     bool open = true;
@@ -905,9 +909,11 @@ bool settings_draw(float scale, ImFont* title, float opening) {
         float bw = std::max(130.0f * scale, ImGui::CalcTextSize(resume_text.c_str()).x + 36 * scale);
         ImGui::SetCursorScreenPos(ImVec2(p.x + w - bw - 10 * scale, p.y + (h - ImGui::GetFrameHeight()) * 0.5f));
         ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 230));
+        ImGui::PushStyleColor(ImGuiCol_NavCursor, ImVec4(0, 0, 0, 0));
         if (ImGui::Button(resume_text.c_str(), ImVec2(bw, 0))) open = false;
+        ImGui::PopStyleColor();
         if (ImGui::IsItemFocused()) {
-            dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), rgb(246, 170, 40), ImGui::GetFrameHeight() * 0.5f, 0, 2.5f * scale);
+            dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), rgb(246, 170, 40), ImGui::GetStyle().FrameRounding, 0, 2.5f * scale);
         }
         ImGui::PopStyleColor();
         ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + h + 14 * scale));
@@ -1107,9 +1113,11 @@ bool settings_draw(float scale, ImFont* title, float opening) {
         float qw = ImGui::CalcTextSize(tr("common.quit_game")).x + 30 * scale;
         ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - qw);
         ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(232, 115, 122, 255));
+        ImGui::PushStyleColor(ImGuiCol_NavCursor, ImVec4(0, 0, 0, 0));
         if (ImGui::Button(tr("common.quit_game"), ImVec2(qw, 0))) g_quit_confirm = true;
+        ImGui::PopStyleColor();
         if (ImGui::IsItemFocused()) {
-            dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), rgb(246, 170, 40), ImGui::GetFrameHeight() * 0.5f, 0, 2.5f * scale);
+            dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), rgb(246, 170, 40), ImGui::GetStyle().FrameRounding, 0, 2.5f * scale);
         }
         ImGui::PopStyleColor();
     }
