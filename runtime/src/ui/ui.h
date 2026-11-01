@@ -31,7 +31,10 @@ bool ui_pad(uint64_t buttons, int32_t lx, int32_t ly);
 // Hold Plus/Minus briefly so the settings shortcut can consume them before the game sees them.
 uint64_t ui_game_buttons(uint64_t buttons, bool captured);
 bool ui_visible();
+// A text field has the keyboard: its keys type there and must not drive the pad (Shift is B, which would close the menu).
+bool ui_text_field();
 void ui_toggle();
+void ui_open_online();  // the settings screen, on its Online page: from any thread
 // Touch screens (Android): one finger as the mouse, in pixels of the presented image. Returns true when the menu
 // took the touch (it is open): the game must not see it.
 bool ui_touch(float x, float y, bool down);
