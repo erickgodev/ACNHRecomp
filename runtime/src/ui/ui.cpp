@@ -396,7 +396,12 @@ void ui_record(VkCommandBuffer cb, VkImage image, VkFormat format, VkExtent2D ex
     if (hint_t > 8.0f) g_first_hint = false;
     const bool hint = g_first_hint && pic;
     const bool show_fps = config_show_fps();
-    if ((!g_visible && !hint && !show_fps) || !extent.width || !extent.height) return;
+    static bool was_visible = false;
+    static clock::time_point opened_at;
+    const bool visible = g_visible.load();
+    if (visible && !was_visible) opened_at = clock::now();
+    was_visible = visible;
+    if ((!visible && !hint && !show_fps) || !extent.width || !extent.height) return;
     if (!init_imgui(format)) return;
     ImGuiIO& io = ImGui::GetIO();
     float scale = theme_scale(up_w, up_h);
@@ -413,8 +418,12 @@ void ui_record(VkCommandBuffer cb, VkImage image, VkFormat format, VkExtent2D ex
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
     ImGui::PushFont(g_font_body);
+    float settings_opacity = 1.0f;
     if (g_visible) {
-        if (!settings_draw(scale, g_font_title)) g_visible = false;  // closed from the screen
+        float opening = std::clamp(std::chrono::duration<float>(now - opened_at).count() / 0.32f, 0.0f, 1.0f);
+        opening = opening * opening * (3.0f - 2.0f * opening);
+        settings_opacity = opening;
+        if (!settings_draw(scale, g_font_title, opening)) g_visible = false;  // closed from the screen
     } else if (hint) {
         settings_hint(scale, hint_t);
     }
@@ -425,6 +434,19 @@ void ui_record(VkCommandBuffer cb, VkImage image, VkFormat format, VkExtent2D ex
     ImGui::Render();
     ImDrawData* dd = ImGui::GetDrawData();
     if (!dd || dd->CmdListsCount == 0) return;
+    // Fade the completed geometry so custom icons, text and backgrounds fade together.
+    // The FPS overlay uses the foreground list and stays fully visible.
+    if (settings_opacity < 1.0f) {
+        const ImDrawList* foreground = ImGui::GetForegroundDrawList();
+        for (ImDrawList* list : dd->CmdLists) {
+            if (list == foreground) continue;
+            for (ImDrawVert& vertex : list->VtxBuffer) {
+                const ImU32 alpha = (vertex.col >> IM_COL32_A_SHIFT) & 0xff;
+                vertex.col = (vertex.col & ~(0xffu << IM_COL32_A_SHIFT)) |
+                             (ImU32(float(alpha) * settings_opacity) << IM_COL32_A_SHIFT);
+            }
+        }
+    }
     if (quarter) rotate_draw_data(dd, quarter, up_w, up_h);
     VkImageView view = view_for(image, format);
     if (!view) return;
@@ -599,6 +621,43 @@ bool ui_pad(uint64_t buttons, int32_t lx, int32_t ly) {
     stick(lx, sx, ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadDpadRight);
     stick(ly, sy, ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadDpadUp);
     return true;
+}
+
+uint64_t ui_game_buttons(uint64_t buttons, bool captured) {
+    using clock = std::chrono::steady_clock;
+    constexpr uint64_t plus = 1ull << 10, minus = 1ull << 11, shortcut = plus | minus;
+    constexpr auto grace = std::chrono::milliseconds(200);
+    static uint64_t previous = 0, pending = 0, passed = 0, blocked = 0;
+    static clock::time_point since[2], tap_until[2];
+    const auto now = clock::now();
+    if (captured) {
+        blocked |= buttons & shortcut;
+        pending = passed = 0;
+        tap_until[0] = tap_until[1] = clock::time_point{};
+        previous = buttons;
+        return buttons & ~shortcut;
+    }
+    blocked &= buttons;
+    const uint64_t pressed = buttons & ~previous & shortcut & ~blocked;
+    const uint64_t released = previous & ~buttons & shortcut;
+    uint64_t output = buttons & ~shortcut;
+    const uint64_t bits[] = {plus, minus};
+    for (int i = 0; i < 2; ++i) {
+        const uint64_t bit = bits[i];
+        if (pressed & bit) pending |= bit, since[i] = now;
+        if (released & bit) {
+            if (pending & bit) tap_until[i] = now + std::chrono::milliseconds(50);
+            pending &= ~bit;
+            passed &= ~bit;
+        } else if ((pending & bit) && now - since[i] >= grace) {
+            pending &= ~bit;
+            passed |= bit;
+        }
+        if (now < tap_until[i]) output |= bit;  // Keep a quick tap visible to the game's next poll.
+    }
+    output |= buttons & passed & ~blocked;
+    previous = buttons;
+    return output;
 }
 
 bool ui_visible() { return g_visible; }

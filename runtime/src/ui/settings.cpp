@@ -154,7 +154,7 @@ void row(const char* label, const char* desc, const std::function<void(float wid
     ImGui::EndGroup();
     const ImVec2 text_min = ImGui::GetItemRectMin(), text_max = ImGui::GetItemRectMax();
     if (!narrow) {
-        ImGui::SameLine(avail - ctrl_w + ImGui::GetStyle().WindowPadding.x * 0.0f);
+        ImGui::SameLine(ImGui::GetCursorPosX() + avail - ctrl_w);
     }
     ImGui::SetNextItemWidth(ctrl_w);
     g_row_key.clear();
@@ -866,7 +866,7 @@ bool g_quit_confirm = false;
 
 }  // namespace
 
-bool settings_draw(float scale, ImFont* title) {
+bool settings_draw(float scale, ImFont* title, float opening) {
     g_scale = scale;
     static const bool cycle = std::getenv("NX_UI_CYCLE") != nullptr;  // tests: every page in turn, 10 s each
     if (cycle) g_page = int(double(plat::monotonic_ns()) / 1e10) % kPageCount;
@@ -881,7 +881,9 @@ bool settings_draw(float scale, ImFont* title) {
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ds, rgb(40, 28, 12, 120));
     ImVec2 size = portrait ? ImVec2(ds.x * 0.96f, ds.y * 0.94f)
                            : ImVec2(std::min(ds.x * 0.92f, 1180.0f * scale), std::min(ds.y * 0.9f, 680.0f * scale));
-    ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    const float remaining = 1.0f - opening;
+    const float slide = 18.0f * scale * remaining;
+    ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f + slide), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(size, ImGuiCond_Always);
     bool open = true;
     ImGui::Begin("##settings", nullptr,
@@ -923,8 +925,10 @@ bool settings_draw(float scale, ImFont* title) {
     // Page buttons: a column on the left, or a row on top when narrow. The footer keeps its line below both.
     float footer = ImGui::GetFrameHeightWithSpacing() + 10.0f * scale;
     float tab_w = portrait ? ImGui::GetContentRegionAvail().x : 210.0f * scale;
-    ImGui::BeginChild("##tabs", ImVec2(tab_w, portrait ? 64.0f * scale : -footer), ImGuiChildFlags_None,
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * scale, portrait ? 0.0f : 8.0f * scale));
+    ImGui::BeginChild("##tabs", ImVec2(tab_w, portrait ? 64.0f * scale : -footer), ImGuiChildFlags_AlwaysUseWindowPadding,
                       ImGuiWindowFlags_NavFlattened | (portrait ? ImGuiWindowFlags_HorizontalScrollbar : 0));
+    ImGui::PopStyleVar();
 
     std::string glyph_style = config_get("controls.glyphs", "auto");
     std::string kind = plat::controller_kind();
@@ -1013,7 +1017,9 @@ bool settings_draw(float scale, ImFont* title) {
         float bw = portrait ? std::max(140.0f * scale, ImGui::CalcTextSize(label).x + bh + 24 * scale) : -1;
         ImVec2 p = ImGui::GetCursorScreenPos();
         bool sel = g_page == k;
+        ImGui::PushStyleColor(ImGuiCol_NavCursor, ImVec4(0, 0, 0, 0));
         if (ImGui::InvisibleButton("##p", ImVec2(bw < 0 ? ImGui::GetContentRegionAvail().x : bw, bh), ImGuiButtonFlags_EnableNav)) g_page = k;
+        ImGui::PopStyleColor();
         bool hov = ImGui::IsItemHovered() || ImGui::IsItemFocused();
         ImVec2 q = ImGui::GetItemRectMax();
         ImDrawList* cl = ImGui::GetWindowDrawList();
@@ -1050,7 +1056,10 @@ bool settings_draw(float scale, ImFont* title) {
     ImGui::EndChild();
     if (!portrait) ImGui::SameLine();
     // The page.
-    ImGui::BeginChild("##page", ImVec2(0, -footer), ImGuiChildFlags_None, ImGuiWindowFlags_NavFlattened);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f * scale, 10.0f * scale));
+    ImGui::BeginChild("##page", ImVec2(0, -footer), ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NavFlattened);
+    ImGui::PopStyleVar();
     ImGui::Dummy(ImVec2(0, 4 * scale));
     switch (g_page) {
         case 0: page_game(); break;
@@ -1105,14 +1114,24 @@ bool settings_draw(float scale, ImFont* title) {
         ImGui::PopStyleColor();
     }
     if (g_quit_confirm) ImGui::OpenPopup("quit");
+    if (g_quit_confirm) {
+        const float width = std::max(1.0f, std::min(400.0f * scale, ds.x - 32.0f * scale));
+        ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0), ImVec2(width, ds.y));
+    }
     if (ImGui::BeginPopupModal("quit", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
         ImGui::TextWrapped("%s", tr("common.quit_confirm"));
-        if (ImGui::Button(tr("common.yes"))) {
+        ImGui::Dummy(ImVec2(0, 8.0f * scale));
+        const float yes_w = std::max(90.0f * scale, ImGui::CalcTextSize(tr("common.yes")).x + 24.0f * scale);
+        const float no_w = std::max(90.0f * scale, ImGui::CalcTextSize(tr("common.no")).x + 24.0f * scale);
+        const float gap = 12.0f * scale;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, (ImGui::GetContentRegionAvail().x - yes_w - no_w - gap) * 0.5f));
+        if (ImGui::Button(tr("common.yes"), ImVec2(yes_w, 0))) {
             config_save();
             plat::exit_process(0);
         }
-        ImGui::SameLine();
-        if (ImGui::Button(tr("common.no"))) g_quit_confirm = false, ImGui::CloseCurrentPopup();
+        ImGui::SameLine(0, gap);
+        if (ImGui::Button(tr("common.no"), ImVec2(no_w, 0))) g_quit_confirm = false, ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     if (g_must_quit) ImGui::OpenPopup("must_quit");
